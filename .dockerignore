@@ -1,0 +1,7 @@
+.venv
+.hlsite
+.git
+__pycache__
+.pytest_cache
+tests
+data/bays.sqlite
