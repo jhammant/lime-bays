@@ -112,3 +112,32 @@ def test_log_filter_redacts_token():
                             ("1.2.3.4:0", "POST", f"/p/{TOKEN}/mcp", "1.1", 200), None)
     RedactPrivatePaths().filter(rec)
     assert TOKEN not in rec.getMessage() and "/p/***/mcp" in rec.getMessage()
+
+
+def test_dataset_switch_falls_back_to_ogl():
+    from app.server import main_dataset
+
+    assert main_dataset("ogl", None) == "ogl"
+    assert main_dataset("full", None) == "ogl"  # full requested but nothing mounted
+    assert main_dataset("full", object()) == "full"
+    assert main_dataset("everything", object()) == "ogl"
+
+
+def test_full_server_tool_covers_boroughs_without_ogl_only_claim(private_db):
+    from mcp import Client
+
+    from app.server import build_full_mcp, build_ogl_mcp
+
+    async def describe(server, lat, lng):
+        async with Client(server) as c:
+            tools = await c.list_tools()
+            res = await c.call_tool("nearest_bays", {"lat": lat, "lng": lng})
+            return tools.tools[0].description, res.content[0].text
+
+    full_desc, full_text = asyncio.run(describe(build_full_mcp(bays.BayIndex(private_db, "test")), 51.4613, -0.1156))
+    ogl_desc, ogl_text = asyncio.run(describe(build_ogl_mcp(), 51.4613, -0.1156))
+
+    assert "Covers the London boroughs" in full_desc and "only for now" not in full_desc
+    assert full_text.startswith("Brixton Road")
+    assert "only for now" in ogl_desc and "Open Government Licence" in ogl_desc
+    assert ogl_text.startswith("No parking bays within 2 kilometres")

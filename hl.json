@@ -1,8 +1,0 @@
-{
-  "slug": "limebays",
-  "title": "London e-bike parking bays (MCP)",
-  "description": "Remote MCP server: nearest dockless e-bike parking bays in London, from council open data (OGL v3)",
-  "port": 8000,
-  "health": "/health",
-  "analytics": false
-}

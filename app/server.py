@@ -23,61 +23,73 @@ from app import bays
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MIN", "60"))
 TRUSTED_HOPS = int(os.environ.get("TRUSTED_HOPS", "1"))
 LOG_FORWARDING = os.environ.get("LOG_FORWARDING") == "1"
-# Optional private index, served only at /p/<token>/mcp. Both must be set (and the file present) to turn it on.
+# Optional full index (mounted from outside the image). With LIMEBAYS_PRIVATE_TOKEN set it is also served at
+# /p/<token>/mcp; with PUBLIC_DATASET=full it is served at the main /mcp too.
 PRIVATE_DB_PATH = os.environ.get("PRIVATE_DB_PATH", "")
 PRIVATE_TOKEN = os.environ.get("LIMEBAYS_PRIVATE_TOKEN", "")
 MIN_TOKEN_LEN = 32
 
-INSTRUCTIONS = (
+# Which data the main /mcp serves: "ogl" (Camden + City of London, Open Government Licence; the default) or
+# "full" (the index at PRIVATE_DB_PATH, which must be mounted from outside the image).
+PUBLIC_DATASET = os.environ.get("PUBLIC_DATASET", "ogl").strip().lower()
+
+OGL_INSTRUCTIONS = (
     "Finds the nearest dockless e-bike parking bays (Lime, Forest, Voi) in London for someone who is cycling. "
     "Answers are short spoken directions, meant to be read aloud. Coverage so far: "
     f"{bays.COVERAGE}. {bays.ATTRIBUTION}"
 )
-
-mcp = MCPServer(name="london-ebike-bays", title="London e-bike parking bays", instructions=INSTRUCTIONS, version="0.1.0")
-
-
-@mcp.tool(
-    name="nearest_bays",
-    title="Nearest e-bike parking bays",
-    description=(
-        "Find the three closest council e-bike / dockless bike hire parking bays (where Lime, Forest and Voi bikes "
-        "must be left) to a point in London. Use the user's current location: if you have device location, use it; "
-        "otherwise ask the user where they are and turn a place name, station or street into approximate latitude "
-        "and longitude yourself before calling. Returns one line per bay for reading aloud, e.g. "
-        "'Pancras Road, 80 metres, north-east' (direction is from the user to the bay), plus structured "
-        f"coordinates for maps. Searches up to 2 km. Coverage: {bays.COVERAGE} only for now. {bays.ATTRIBUTION}"
-    ),
-    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
-)
-def nearest_bays(lat: float, lng: float) -> CallToolResult:
-    """lat: latitude of the user in decimal degrees (WGS84), e.g. 51.5308. lng: longitude in decimal degrees, e.g. -0.1238."""
-    result = bays.nearest(lat, lng)
-    return CallToolResult(
-        content=[TextContent(type="text", text=result["spoken"])],
-        structured_content={**result, "attribution": bays.ATTRIBUTION},
-    )
-
-
-PRIVATE_COVERAGE = (
-    "every London borough that publishes its bay locations: Brent, Camden, City of London, Ealing, Greenwich, "
+FULL_COVERAGE = (
+    "the London boroughs that publish their bay locations: Brent, Camden, City of London, Ealing, Greenwich, "
     "Hackney, Haringey, Islington, Kensington and Chelsea, Lambeth, Lewisham, Merton, Southwark, Wandsworth "
     "and Westminster"
 )
-PRIVATE_NOTE = (
-    "Bay locations come from council publications (open data, council bay maps, traffic orders) gathered for "
-    "private personal use; most of them state no licence. Some bays were geocoded from traffic-order text and are "
-    "marked approximate."
+FULL_SHORT_COVERAGE = "the 15 London boroughs that publish their bay locations"
+FULL_NOTE = (
+    "Bay locations come from London council publications (open data, council bay maps, traffic orders) and a "
+    "compilation of them; some were geocoded from traffic-order text and are marked approximate."
 )
+FULL_ATTRIBUTION = FULL_NOTE + " Camden and City of London records: " + bays.ATTRIBUTION
+TOOL_USAGE = (
+    "to a point in London. Use the user's current location: if you have device location, use it; otherwise ask the "
+    "user where they are and turn a place name, station or street into approximate latitude and longitude yourself "
+    "before calling. Returns one line per bay for reading aloud, e.g. 'Pancras Road, 80 metres, north-east' "
+    "(direction is from the user to the bay"
+)
+ANNOTATIONS = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 
-def build_private_mcp(index):
+def build_ogl_mcp():
+    server = MCPServer(name="london-ebike-bays", title="London e-bike parking bays", instructions=OGL_INSTRUCTIONS,
+                       version="0.1.0")
+
+    @server.tool(
+        name="nearest_bays",
+        title="Nearest e-bike parking bays",
+        description=(
+            "Find the three closest council e-bike / dockless bike hire parking bays (where Lime, Forest and Voi bikes "
+            f"must be left) {TOOL_USAGE}), plus structured coordinates for maps. Searches up to 2 km. "
+            f"Coverage: {bays.COVERAGE} only for now. {bays.ATTRIBUTION}"
+        ),
+        annotations=ANNOTATIONS,
+    )
+    def nearest_bays(lat: float, lng: float) -> CallToolResult:
+        """lat: latitude of the user in decimal degrees (WGS84), e.g. 51.5308. lng: longitude in decimal degrees, e.g. -0.1238."""
+        result = bays.nearest(lat, lng)
+        return CallToolResult(
+            content=[TextContent(type="text", text=result["spoken"])],
+            structured_content={**result, "attribution": bays.ATTRIBUTION},
+        )
+
+    return server
+
+
+def build_full_mcp(index, name="london-ebike-bays"):
     server = MCPServer(
-        name="london-ebike-bays-all",
-        title="London e-bike parking bays (all boroughs)",
+        name=name,
+        title="London e-bike parking bays",
         instructions=(
             "Finds the nearest dockless e-bike parking bays (Lime, Forest, Voi) in London for someone who is cycling. "
-            f"Answers are short spoken directions, meant to be read aloud. Coverage: {PRIVATE_COVERAGE}. {PRIVATE_NOTE}"
+            f"Answers are short spoken directions, meant to be read aloud. Coverage: {FULL_COVERAGE}."
         ),
         version="0.2.0",
     )
@@ -87,36 +99,35 @@ def build_private_mcp(index):
         title="Nearest e-bike parking bays",
         description=(
             "Find the three closest e-bike / dockless bike hire parking bays (where Lime, Forest and Voi bikes must be "
-            "left) to a point in London. Use the user's current location: if you have device location, use it; "
-            "otherwise ask the user where they are and turn a place name, station or street into approximate latitude "
-            "and longitude yourself before calling. Returns one line per bay for reading aloud, e.g. "
-            "'Pancras Road, 80 metres, north-east' (direction is from the user to the bay; 'approximate location' "
-            "means the council only published a street description), plus structured coordinates for maps. "
-            f"Searches up to 2 km. Coverage: {PRIVATE_COVERAGE}. {PRIVATE_NOTE}"
+            f"left) {TOOL_USAGE}; 'approximate location' means the council only published a street description), plus "
+            f"structured coordinates for maps. Searches up to 2 km. Covers {FULL_COVERAGE}. {FULL_NOTE}"
         ),
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
+        annotations=ANNOTATIONS,
     )
     def nearest_bays(lat: float, lng: float) -> CallToolResult:
         """lat: latitude of the user in decimal degrees (WGS84), e.g. 51.5308. lng: longitude in decimal degrees, e.g. -0.1238."""
         result = index.nearest(lat, lng)
         return CallToolResult(
             content=[TextContent(type="text", text=result["spoken"])],
-            structured_content={**result, "sources": PRIVATE_NOTE},
+            structured_content={**result, "attribution": FULL_ATTRIBUTION},
         )
 
     return server
 
 
-@mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
-async def health(_: Request):
-    return JSONResponse({"ok": True, "bays": bays.stats()})
+def add_info_routes(server, dataset, index):
+    """GET /health and GET / on whichever server answers /mcp."""
+    attribution = FULL_ATTRIBUTION if dataset == "full" else bays.ATTRIBUTION
 
+    @server.custom_route("/health", methods=["GET"], include_in_schema=False)
+    async def health(_: Request):
+        return JSONResponse({"ok": True, "dataset": dataset, "bays": index.stats()})
 
-@mcp.custom_route("/", methods=["GET"], include_in_schema=False)
-async def root(_: Request):
-    return PlainTextResponse(
-        "London e-bike parking bay finder: a remote MCP server at /mcp (tool: nearest_bays). " + bays.ATTRIBUTION + "\n"
-    )
+    @server.custom_route("/", methods=["GET"], include_in_schema=False)
+    async def root(_: Request):
+        return PlainTextResponse(
+            "London e-bike parking bay finder: a remote MCP server at /mcp (tool: nearest_bays). " + attribution + "\n"
+        )
 
 
 class RateLimit:
@@ -234,24 +245,49 @@ for _name in ("uvicorn.access", "uvicorn.error", "mcp", "starlette"):
     logging.getLogger(_name).addFilter(RedactPrivatePaths())
 
 
-def private_index():
-    if not (PRIVATE_DB_PATH and PRIVATE_TOKEN):
-        return None
-    if len(PRIVATE_TOKEN) < MIN_TOKEN_LEN:
-        print(f"private index disabled: LIMEBAYS_PRIVATE_TOKEN is shorter than {MIN_TOKEN_LEN} characters", flush=True)
+def full_index():
+    """The full index from PRIVATE_DB_PATH, or None when it isn't mounted."""
+    if not PRIVATE_DB_PATH:
         return None
     if not os.path.isfile(PRIVATE_DB_PATH):
-        print("private index disabled: PRIVATE_DB_PATH is not a file", flush=True)
+        print("full index unavailable: PRIVATE_DB_PATH is not a file", flush=True)
         return None
-    index = bays.BayIndex(PRIVATE_DB_PATH, "the 15 London boroughs that publish their bay locations")
-    print(f"private index on: {sum(index.stats().values())} active bays", flush=True)
+    index = bays.BayIndex(PRIVATE_DB_PATH, FULL_SHORT_COVERAGE)
+    print(f"full index: {sum(index.stats().values())} active bays", flush=True)
     return index
 
 
+def token_ok():
+    if not PRIVATE_TOKEN:
+        return False
+    if len(PRIVATE_TOKEN) < MIN_TOKEN_LEN:
+        print(f"secret path disabled: LIMEBAYS_PRIVATE_TOKEN is shorter than {MIN_TOKEN_LEN} characters", flush=True)
+        return False
+    return True
+
+
+def main_dataset(requested, index):
+    if requested not in ("ogl", "full"):
+        print(f"PUBLIC_DATASET={requested!r} is not ogl or full: serving ogl", flush=True)
+        return "ogl"
+    if requested == "full" and index is None:
+        print("PUBLIC_DATASET=full but the full index is not mounted: serving ogl", flush=True)
+        return "ogl"
+    return requested
+
+
 def build_app():
-    index = private_index()
-    private = _mcp_app(build_private_mcp(index)) if index else None
-    return RateLimit(PrivateDispatch(_mcp_app(mcp), private, PRIVATE_TOKEN), RATE_LIMIT)
+    index = full_index()
+    dataset = main_dataset(PUBLIC_DATASET, index)
+    if dataset == "full":
+        main = build_full_mcp(index)
+        add_info_routes(main, "full", index)
+    else:
+        main = build_ogl_mcp()
+        add_info_routes(main, "ogl", bays.PUBLIC)
+    print(f"main /mcp serves the {dataset} dataset", flush=True)
+    secret = _mcp_app(build_full_mcp(index, name="london-ebike-bays-all")) if index and token_ok() else None
+    return RateLimit(PrivateDispatch(_mcp_app(main), secret, PRIVATE_TOKEN), RATE_LIMIT)
 
 
 app = build_app()
