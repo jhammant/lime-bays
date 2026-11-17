@@ -5,3 +5,9 @@ __pycache__
 .pytest_cache
 tests
 data/bays.sqlite
+private
+*private*.sqlite
+*.kml
+CONNECTOR-URL.txt
+.env
+.env.*

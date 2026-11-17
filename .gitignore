@@ -4,3 +4,10 @@ __pycache__/
 .hlsite/
 data/bays.tmp
 data/bays.sqlite
+
+# Private data never belongs in this repo
+private/
+*private*.sqlite
+*.kml
+CONNECTOR-URL.txt
+.env

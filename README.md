@@ -15,7 +15,7 @@ python3 -I scripts/build.py            # data/raw -> data/bays.sqlite (SQLite R*
 PORT=18765 .venv/bin/python -m app.server
 .venv/bin/python scripts/smoke.py http://127.0.0.1:18765/mcp
 .venv/bin/python -m pytest -q tests
-hlsite deploy . --on endor --slug limebays --access public
+scripts/deploy_endor.sh                # ships git HEAD only, via hlsite/loom
 ```
 
 Rate limit: a sliding one-minute window per client IP (in memory; `RATE_LIMIT_PER_MIN`, 300 in the image).
@@ -28,3 +28,16 @@ practice the limit is one shared bucket for everyone until the edge forwards the
 The code is MIT (see `LICENSE`). The bay data in `data/raw/` is not: it contains public sector information licensed
 under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
 (London Borough of Camden; City of London Corporation). Sources and attribution are in `SOURCES.md`.
+
+## Optional private index
+
+The server can also serve a second, private bay index (for example one you compiled yourself from sources you
+may use but not republish). It is off unless both are set:
+
+- `PRIVATE_DB_PATH`: a SQLite file with the same `bays` + `bays_rtree` tables (extra columns `status` and
+  `approximate` are honoured: only `Active` bays are returned, approximate ones are flagged in speech).
+- `LIMEBAYS_PRIVATE_TOKEN`: at least 32 random URL-safe characters.
+
+It is then served only at `/p/<token>/mcp` (constant-time token check; any other `/p/...` is a plain 404, and
+access logs show `/p/***`). The public `/mcp` is unaffected. Keep the private file out of this repo and out of
+the image: mount it read-only (see `scripts/deploy_endor.sh`).

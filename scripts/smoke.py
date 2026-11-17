@@ -11,6 +11,9 @@ POINTS = {
     "St Pancras": (51.5308, -0.1238),
     "Camden Town tube": (51.5392, -0.1426),
     "Bank": (51.5133, -0.0890),
+    "Brixton": (51.4613, -0.1156),
+    "Hackney Central": (51.5469, -0.0553),
+    "Westminster / Soho": (51.5136, -0.1365),
     "Derby": (52.9225, -1.4746),
     "Richmond (London, no coverage)": (51.4613, -0.3037),
 }
@@ -26,6 +29,8 @@ async def main():
             sc = res.structured_content or {}
             print(f"\n## {label}: status={sc.get('status')} bays={len(sc.get('bays', []))} error={res.is_error}")
             print(text)
+            if sc.get("bays"):
+                print("   ", [(b["borough"], b.get("source")) for b in sc["bays"]])
 
 
 asyncio.run(main())
