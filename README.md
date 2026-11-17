@@ -18,4 +18,7 @@ PORT=18765 .venv/bin/python -m app.server
 hlsite deploy . --on endor --slug limebays --access public
 ```
 
-Rate limit: 60 requests a minute per client IP (in memory, `RATE_LIMIT_PER_MIN`).
+Rate limit: a sliding one-minute window per client IP (in memory; `RATE_LIMIT_PER_MIN`, 300 in the image).
+The client IP is taken `TRUSTED_HOPS` (default 1) entries from the right of `X-Forwarded-For`. Behind endor's
+edge today every request arrives as the edge's own address (10.0.0.184, no client IP forwarded), so in
+practice the limit is one shared bucket for everyone until the edge forwards the real client IP.

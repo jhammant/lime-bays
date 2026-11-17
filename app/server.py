@@ -15,6 +15,8 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from app import bays
 
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MIN", "60"))
+TRUSTED_HOPS = int(os.environ.get("TRUSTED_HOPS", "1"))
+LOG_FORWARDING = os.environ.get("LOG_FORWARDING") == "1"
 
 INSTRUCTIONS = (
     "Finds the nearest dockless e-bike parking bays (Lime, Forest, Voi) in London for someone who is cycling. "
@@ -68,12 +70,14 @@ class RateLimit:
         self.last_sweep = time.monotonic()
 
     def client_ip(self, scope):
+        """With TRUSTED_HOPS proxies in front, the client is that many X-Forwarded-For entries from the right.
+        Entries further left are written by the client, so they are ignored (no spoofing past the limit)."""
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-        for h in ("cf-connecting-ip", "x-real-ip"):
-            if headers.get(h):
-                return headers[h].strip()
-        if headers.get("x-forwarded-for"):
-            return headers["x-forwarded-for"].split(",")[0].strip()
+        if LOG_FORWARDING:
+            print("forwarding:", {k: v for k, v in headers.items() if "forward" in k or "real-ip" in k}, scope.get("client"), flush=True)
+        hops = [h.strip() for h in headers.get("x-forwarded-for", "").split(",") if h.strip()]
+        if TRUSTED_HOPS > 0 and hops:
+            return hops[max(0, len(hops) - TRUSTED_HOPS)]
         return (scope.get("client") or ("?",))[0]
 
     async def __call__(self, scope, receive, send):
@@ -116,4 +120,4 @@ def build_app():
 app = build_app()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), proxy_headers=True, forwarded_allow_ips="*")
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), proxy_headers=False)
