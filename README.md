@@ -22,3 +22,9 @@ Rate limit: a sliding one-minute window per client IP (in memory; `RATE_LIMIT_PE
 The client IP is taken `TRUSTED_HOPS` (default 1) entries from the right of `X-Forwarded-For`. Behind endor's
 edge today every request arrives as the edge's own address (10.0.0.184, no client IP forwarded), so in
 practice the limit is one shared bucket for everyone until the edge forwards the real client IP.
+
+## Licence
+
+The code is MIT (see `LICENSE`). The bay data in `data/raw/` is not: it contains public sector information licensed
+under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+(London Borough of Camden; City of London Corporation). Sources and attribution are in `SOURCES.md`.
